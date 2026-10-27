@@ -9,31 +9,29 @@ from backend.database import Base, get_db
 
 from sqlalchemy.pool import StaticPool
 
+from sqlalchemy.pool import StaticPool
+
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///:memory:"
 
-engine = create_engine(
+test_api_engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+TestApiSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_api_engine)
 
-def override_get_db():
+def override_get_db_api():
+    db = TestApiSessionLocal()
     try:
-        db = TestingSessionLocal()
         yield db
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
-
 @pytest.fixture(autouse=True)
 def setup_db():
-    Base.metadata.create_all(bind=engine)
-    # Seed minimal locations
-    db = TestingSessionLocal()
+    app.dependency_overrides[get_db] = override_get_db_api
+    Base.metadata.create_all(bind=test_api_engine)
+    db = TestApiSessionLocal()
     from backend.models import Location
     if not db.query(Location).filter(Location.code == "ALM-01").first():
         db.add(Location(code="ALM-01", name="Almacén Test", type="ALMACEN"))
@@ -42,9 +40,9 @@ def setup_db():
         db.commit()
     db.close()
     yield
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("./test_robotrack.db"):
-        os.remove("./test_robotrack.db")
+    Base.metadata.drop_all(bind=test_api_engine)
+
+client = TestClient(app)
 
 def test_root():
     res = client.get("/")

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Plug, Unplug, Play, AlertTriangle, LayoutDashboard, Package, Boxes, MapPin, ShoppingBag, Truck, Compass } from 'lucide-react';
+import { Cpu, Plug, Unplug, Play, AlertTriangle, LayoutDashboard, Package, Boxes, MapPin, ShoppingBag, Truck, Compass, FileSpreadsheet, Calendar } from 'lucide-react';
 
 export function Header({
   activeTab,
@@ -18,6 +18,8 @@ export function Header({
   const wmsTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'productos', label: 'Productos', icon: Package },
+    { id: 'importar', label: 'Importar Excel', icon: FileSpreadsheet },
+    { id: 'conteos', label: 'Conteos Cíclicos', icon: Calendar },
     { id: 'inventario', label: 'Inventario', icon: Boxes },
     { id: 'ubicaciones', label: 'Ubicaciones', icon: MapPin },
     { id: 'pedidos', label: 'Pedidos', icon: ShoppingBag },

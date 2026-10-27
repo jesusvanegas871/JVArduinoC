@@ -85,5 +85,36 @@ export const apiService = {
   },
   getMissionById: (id) => request(`/missions/${id}`),
   createMission: (missionData) => request('/missions', { method: 'POST', body: JSON.stringify(missionData) }),
-  recordMissionEvent: (missionId, eventData) => request(`/missions/${missionId}/events`, { method: 'POST', body: JSON.stringify(eventData) })
+  recordMissionEvent: (missionId, eventData) => request(`/missions/${missionId}/events`, { method: 'POST', body: JSON.stringify(eventData) }),
+
+  // --- IMPORT EXCEL & CATALOG METRICS ---
+  getCatalogMetrics: () => request('/import/metrics'),
+  previewExcelImport: async (formData) => {
+    // API_BASE_URL handles base path http://localhost:8000/api
+    const url = `${API_BASE_URL}/import/preview`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData, // FormData containing file & sheet_name
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: 'Error en respuesta del servidor' }));
+      throw new Error(errorData.detail || `Error HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
+  confirmExcelImport: (confirmPayload) => request('/import/confirm', { method: 'POST', body: JSON.stringify(confirmPayload) }),
+  getImportLogs: () => request('/import/logs'),
+
+  // --- CYCLE COUNTS ---
+  getCycleSchedules: () => request('/cycle-counts/schedules'),
+  generateCycleSchedule: (generateData = {}) => request('/cycle-counts/generate', { method: 'POST', body: JSON.stringify(generateData) }),
+  completeCycleCountItem: (itemId, user_id = 'operador', notes = '') => {
+    const query = new URLSearchParams();
+    if (user_id) query.append('user_id', user_id);
+    if (notes) query.append('notes', notes);
+    const qStr = query.toString();
+    return request(`/cycle-counts/items/${itemId}/complete${qStr ? `?${qStr}` : ''}`, { method: 'POST' });
+  }
 };

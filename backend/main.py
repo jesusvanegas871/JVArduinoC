@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from backend.database import init_db
-from backend.routers import products, inventory, locations, orders, missions, dashboard
+from backend.routers import products, inventory, locations, orders, missions, dashboard, import_excel, cycle_counts
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +33,8 @@ app.include_router(locations.router)
 app.include_router(orders.router)
 app.include_router(missions.router)
 app.include_router(dashboard.router)
+app.include_router(import_excel.router)
+app.include_router(cycle_counts.router)
 
 @app.get("/")
 def read_root():
