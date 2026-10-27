@@ -66,6 +66,7 @@ class CatalogMetrics(BaseModel):
     total_duplicates_detected: int
     total_missing_for_600: int
     total_active_eligible_for_count: int
+    info_message: Optional[str] = None
 
 # --- EXCEL IMPORT SCHEMAS ---
 class ImportRowPreview(BaseModel):
@@ -137,6 +138,9 @@ class CycleCountItemOut(BaseModel):
     schedule_id: int
     product_id: int
     status: str
+    expected_quantity: Optional[int] = None
+    physical_quantity: Optional[int] = None
+    discrepancy: Optional[int] = None
     completed_at: Optional[datetime] = None
     completed_by: Optional[str] = None
     notes: Optional[str] = None
@@ -144,6 +148,16 @@ class CycleCountItemOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class CycleCountItemCompleteRequest(BaseModel):
+    item_id: int
+    physical_quantity: int = Field(..., ge=0, description="Cantidad física contada (debe ser mayor o igual a 0)")
+    notes: Optional[str] = None
+
+class BulkCycleCountCompleteRequest(BaseModel):
+    schedule_id: int
+    user_id: str = "operador"
+    items: List[CycleCountItemCompleteRequest] = Field(..., min_length=1)
 
 class CycleCountScheduleOut(BaseModel):
     id: int

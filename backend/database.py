@@ -18,8 +18,26 @@ def get_db():
     finally:
         db.close()
 
+from sqlalchemy import inspect, text
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight migration check for cycle_count_schedule_items
+    try:
+        inspector = inspect(engine)
+        if inspector.has_table("cycle_count_schedule_items"):
+            cols = [c["name"] for c in inspector.get_columns("cycle_count_schedule_items")]
+            with engine.begin() as conn:
+                if "expected_quantity" not in cols:
+                    conn.execute(text("ALTER TABLE cycle_count_schedule_items ADD COLUMN expected_quantity INTEGER;"))
+                if "physical_quantity" not in cols:
+                    conn.execute(text("ALTER TABLE cycle_count_schedule_items ADD COLUMN physical_quantity INTEGER;"))
+                if "discrepancy" not in cols:
+                    conn.execute(text("ALTER TABLE cycle_count_schedule_items ADD COLUMN discrepancy INTEGER;"))
+    except Exception as e:
+        print(f"Migration check error: {e}")
+
     db = SessionLocal()
     try:
         # Seed default locations if not exists

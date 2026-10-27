@@ -4,6 +4,7 @@ import { Package, ShieldAlert, ShoppingBag, Truck, CheckCircle2, ArrowUpRight, A
 
 export function DashboardModule() {
   const [stats, setStats] = useState(null);
+  const [catalogMetrics, setCatalogMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -11,8 +12,12 @@ export function DashboardModule() {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getDashboardStats();
+      const [data, metrics] = await Promise.all([
+        apiService.getDashboardStats(),
+        apiService.getCatalogMetrics()
+      ]);
       setStats(data);
+      setCatalogMetrics(metrics);
     } catch (err) {
       setError(err.message || 'Error cargando estadísticas del dashboard');
     } finally {
@@ -52,7 +57,24 @@ export function DashboardModule() {
   return (
     <div className="space-y-6">
       {/* Top Metrics Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
+        {/* Catalog Verification 600 Card */}
+        <div className="bg-slate-900/80 border border-emerald-500/40 p-4 rounded-2xl flex flex-col justify-between shadow-lg shadow-emerald-950/20 col-span-1 sm:col-span-2 lg:col-span-1">
+          <div className="flex items-center justify-between text-slate-400 mb-1">
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Verificación Catálogo</span>
+            <Package className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <div className="text-xs text-slate-300 font-semibold">Referencias únicas cargadas:</div>
+            <div className="text-xl font-black text-white font-mono mt-0.5">
+              {catalogMetrics ? catalogMetrics.total_existing_in_db : stats.total_active_products} / 600
+            </div>
+          </div>
+          <span className="text-[11px] text-amber-400 font-semibold mt-1">
+            Faltan {catalogMetrics ? catalogMetrics.total_missing_for_600 : (600 - stats.total_active_products)} referencias para completar 600
+          </span>
+        </div>
+
         {/* Active Products */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">

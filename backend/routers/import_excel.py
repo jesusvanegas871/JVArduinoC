@@ -25,6 +25,9 @@ def calculate_catalog_metrics(db: Session, new_imported_count: int = 0, duplicat
     total_unique_imported = total_existing
     target = 600
     missing = max(0, target - total_existing)
+    info_msg = None
+    if missing > 0:
+        info_msg = "Se necesita importar el archivo completo con las 600 referencias para listar las referencias faltantes."
 
     return CatalogMetrics(
         target_catalog=target,
@@ -33,7 +36,8 @@ def calculate_catalog_metrics(db: Session, new_imported_count: int = 0, duplicat
         total_new_imported=new_imported_count,
         total_duplicates_detected=duplicates_in_import,
         total_missing_for_600=missing,
-        total_active_eligible_for_count=total_active_eligible
+        total_active_eligible_for_count=total_active_eligible,
+        info_message=info_msg
     )
 
 @router.get("/metrics", response_model=CatalogMetrics)

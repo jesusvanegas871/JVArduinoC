@@ -133,42 +133,45 @@ export function ExcelImportModule() {
     <div className="space-y-6">
       {/* Target Catalog Metric Cards (Target 600) */}
       {metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-slate-400">Meta Catálogo</span>
-            <div className="text-2xl font-black text-white mt-1 font-mono">{metrics.target_catalog}</div>
-            <span className="text-[10px] text-slate-500 mt-1">Referencias objetivo</span>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-slate-900/80 border border-emerald-500/40 p-4 rounded-2xl flex flex-col justify-between shadow-lg shadow-emerald-950/20 col-span-2">
+              <span className="text-[11px] font-bold uppercase text-emerald-400">Referencias únicas cargadas</span>
+              <div className="text-2xl font-black text-white mt-1 font-mono">{metrics.total_existing_in_db} / {metrics.target_catalog}</div>
+              <span className="text-[11px] text-amber-400 font-semibold mt-1">Faltan {metrics.total_missing_for_600} referencias para completar las 600</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[11px] font-semibold uppercase text-amber-400">Faltantes p/ 600</span>
+              <div className="text-2xl font-black text-amber-400 mt-1 font-mono">{metrics.total_missing_for_600}</div>
+              <span className="text-[10px] text-slate-500 mt-1">Para completar meta</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[11px] font-semibold uppercase text-blue-400">Elegibles Conteos</span>
+              <div className="text-2xl font-black text-blue-400 mt-1 font-mono">{metrics.total_active_eligible_for_count}</div>
+              <span className="text-[10px] text-slate-500 mt-1">&lt; 5 conteos anuales</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[11px] font-semibold uppercase text-purple-400">Nuevas en Import</span>
+              <div className="text-2xl font-black text-purple-400 mt-1 font-mono">{metrics.total_new_imported}</div>
+              <span className="text-[10px] text-slate-500 mt-1">Por incorporar</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[11px] font-semibold uppercase text-rose-400">Duplicadas Det.</span>
+              <div className="text-2xl font-black text-rose-400 mt-1 font-mono">{metrics.total_duplicates_detected}</div>
+              <span className="text-[10px] text-slate-500 mt-1">Identificadas</span>
+            </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-emerald-400">Catálogo Actual</span>
-            <div className="text-2xl font-black text-emerald-400 mt-1 font-mono">{metrics.total_existing_in_db}</div>
-            <span className="text-[10px] text-slate-500 mt-1">Referencias únicas BD</span>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-amber-400">Faltantes p/ 600</span>
-            <div className="text-2xl font-black text-amber-400 mt-1 font-mono">{metrics.total_missing_for_600}</div>
-            <span className="text-[10px] text-slate-500 mt-1">Para completar meta</span>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-blue-400">Elegibles Conteos</span>
-            <div className="text-2xl font-black text-blue-400 mt-1 font-mono">{metrics.total_active_eligible_for_count}</div>
-            <span className="text-[10px] text-slate-500 mt-1">&lt; 5 conteos anuales</span>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-purple-400">Nuevas en Import</span>
-            <div className="text-2xl font-black text-purple-400 mt-1 font-mono">{metrics.total_new_imported}</div>
-            <span className="text-[10px] text-slate-500 mt-1">Por incorporar</span>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
-            <span className="text-[11px] font-semibold uppercase text-rose-400">Duplicadas Det.</span>
-            <div className="text-2xl font-black text-rose-400 mt-1 font-mono">{metrics.total_duplicates_detected}</div>
-            <span className="text-[10px] text-slate-500 mt-1">Identificadas</span>
-          </div>
+          {metrics.info_message && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{metrics.info_message}</span>
+            </div>
+          )}
         </div>
       )}
 
