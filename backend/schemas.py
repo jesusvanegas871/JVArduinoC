@@ -18,14 +18,17 @@ class CategoryOut(CategoryBase):
 
 # --- PRODUCT ---
 class ProductBase(BaseModel):
-    sku: str = Field(..., min_length=2, max_length=50)
-    name: str = Field(..., min_length=2, max_length=150)
+    sku: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=150)
     description: Optional[str] = None
     category_id: Optional[int] = None
     unit_of_measure: str = "unidades"
     min_stock: int = 5
     default_location_code: str = "ALM-01"
     is_active: bool = True
+    annual_physical_count: int = 0
+    monthly_projections: Optional[str] = None
+    source_origin: Optional[str] = "MANUAL"
 
 class ProductCreate(ProductBase):
     initial_quantity: int = 0
@@ -38,6 +41,9 @@ class ProductUpdate(BaseModel):
     min_stock: Optional[int] = None
     default_location_code: Optional[str] = None
     is_active: Optional[bool] = None
+    annual_physical_count: Optional[int] = None
+    monthly_projections: Optional[str] = None
+    source_origin: Optional[str] = None
 
 class ProductOut(ProductBase):
     id: int
@@ -47,6 +53,109 @@ class ProductOut(ProductBase):
     created_at: datetime
     updated_at: datetime
     category: Optional[CategoryOut] = None
+
+    class Config:
+        from_attributes = True
+
+# --- CATALOG METRICS (TARGET 600) ---
+class CatalogMetrics(BaseModel):
+    target_catalog: int = 600
+    total_unique_imported: int
+    total_existing_in_db: int
+    total_new_imported: int
+    total_duplicates_detected: int
+    total_missing_for_600: int
+    total_active_eligible_for_count: int
+
+# --- EXCEL IMPORT SCHEMAS ---
+class ImportRowPreview(BaseModel):
+    row_index: int
+    sku: str
+    name: str
+    category: Optional[str] = None
+    origin_sheet: str
+    status: str # "NUEVO", "EXISTENTE", "DUPLICADO_EN_ARCHIVO", "INVALIDO", "ADVERTENCIA"
+    action: str # "CREAR", "ACTUALIZAR", "OMITIR", "ERROR"
+    warnings: List[str] = []
+    errors: List[str] = []
+    auxiliary_data: Optional[dict] = None
+
+class ImportPreviewResponse(BaseModel):
+    filename: str
+    sheet_name: str
+    total_rows: int
+    valid_rows_count: int
+    to_create_count: int
+    to_update_count: int
+    skipped_count: int
+    error_count: int
+    detected_headers: List[str]
+    preview_rows: List[ImportRowPreview]
+    catalog_metrics: CatalogMetrics
+
+class ImportConfirmRequest(BaseModel):
+    filename: str
+    sheet_name: str
+    preview_rows: List[ImportRowPreview]
+    user_id: str = "admin"
+
+class ImportResult(BaseModel):
+    log_id: int
+    filename: str
+    sheet_name: str
+    created_count: int
+    updated_count: int
+    skipped_count: int
+    error_count: int
+    catalog_metrics: CatalogMetrics
+    message: str
+
+class ExcelImportLogOut(BaseModel):
+    id: int
+    filename: str
+    sheet_name: str
+    imported_by: str
+    total_records: int
+    created_count: int
+    updated_count: int
+    skipped_count: int
+    error_count: int
+    details_json: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- CYCLE COUNT SCHEDULES ---
+class CycleScheduleGenerate(BaseModel):
+    week_number: Optional[int] = None
+    year: Optional[int] = None
+    target_count: int = 57
+
+class CycleCountItemOut(BaseModel):
+    id: int
+    schedule_id: int
+    product_id: int
+    status: str
+    completed_at: Optional[datetime] = None
+    completed_by: Optional[str] = None
+    notes: Optional[str] = None
+    product: ProductOut
+
+    class Config:
+        from_attributes = True
+
+class CycleCountScheduleOut(BaseModel):
+    id: int
+    week_number: int
+    year: int
+    status: str
+    target_count: int
+    scheduled_count: int
+    completed_count: int
+    warning_message: Optional[str] = None
+    created_at: datetime
+    items: List[CycleCountItemOut] = []
 
     class Config:
         from_attributes = True

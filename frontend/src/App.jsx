@@ -9,6 +9,8 @@ import { RutasPanel } from './components/RutasPanel';
 import { EventLog } from './components/EventLog';
 import { DashboardModule } from './components/DashboardModule';
 import { ProductsModule } from './components/ProductsModule';
+import { ExcelImportModule } from './components/ExcelImportModule';
+import { CycleCountModule } from './components/CycleCountModule';
 import { InventoryModule } from './components/InventoryModule';
 import { LocationsModule } from './components/LocationsModule';
 import { OrdersModule } from './components/OrdersModule';
@@ -221,6 +223,10 @@ export default function App() {
         {activeTab === 'dashboard' && <DashboardModule />}
 
         {activeTab === 'productos' && <ProductsModule />}
+
+        {activeTab === 'importar' && <ExcelImportModule />}
+
+        {activeTab === 'conteos' && <CycleCountModule />}
 
         {activeTab === 'inventario' && <InventoryModule />}
 

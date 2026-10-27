@@ -66,6 +66,11 @@ class Product(Base):
     default_location_code = Column(String(50), default="ALM-01")
     is_active = Column(Boolean, default=True)
 
+    # Cycle count & excel aux data
+    annual_physical_count = Column(Integer, default=0, nullable=False)
+    monthly_projections = Column(Text, nullable=True) # JSON object for Enero-Diciembre projections
+    source_origin = Column(String(50), default="MANUAL") # PRODUCTOS A INCLUIR, DATA VENTAS, MANUAL
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -162,3 +167,64 @@ class MissionEvent(Base):
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     mission = relationship("Mission", back_populates="events")
+
+class SalesHistory(Base):
+    __tablename__ = "sales_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_number = Column(String(100), nullable=True)
+    sale_date = Column(DateTime, nullable=True)
+    total_order_value = Column(Float, nullable=True)
+    currency = Column(String(20), default="COP")
+    sku = Column(String(50), nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    quantity = Column(Integer, default=1, nullable=False)
+    total_ref_value = Column(Float, nullable=True)
+    company = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=True)
+    category_raw = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class ExcelImportLog(Base):
+    __tablename__ = "excel_import_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    sheet_name = Column(String(100), nullable=False)
+    imported_by = Column(String(100), default="admin")
+    total_records = Column(Integer, default=0)
+    created_count = Column(Integer, default=0)
+    updated_count = Column(Integer, default=0)
+    skipped_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    details_json = Column(Text, nullable=True) # Summary or error details
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class CycleCountSchedule(Base):
+    __tablename__ = "cycle_count_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    week_number = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False)
+    status = Column(String(50), default="EN_PROGRESO") # EN_PROGRESO, COMPLETADO, CANCELADO
+    target_count = Column(Integer, default=57)
+    scheduled_count = Column(Integer, default=0)
+    completed_count = Column(Integer, default=0)
+    warning_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    items = relationship("CycleCountScheduleItem", back_populates="schedule", cascade="all, delete-orphan")
+
+class CycleCountScheduleItem(Base):
+    __tablename__ = "cycle_count_schedule_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    schedule_id = Column(Integer, ForeignKey("cycle_count_schedules.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    status = Column(String(50), default="PENDIENTE") # PENDIENTE, FINALIZADO, OMITIDO
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    schedule = relationship("CycleCountSchedule", back_populates="items")
+    product = relationship("Product")
