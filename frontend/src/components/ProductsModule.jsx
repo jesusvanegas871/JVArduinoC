@@ -6,6 +6,7 @@ export function ProductsModule() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [catalogMetrics, setCatalogMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -40,15 +41,17 @@ export function ProductsModule() {
       if (categoryId) params.category_id = categoryId;
       if (statusFilter !== '') params.is_active = statusFilter === 'true';
 
-      const [prods, cats, locs] = await Promise.all([
+      const [prods, cats, locs, metrics] = await Promise.all([
         apiService.getProducts(params),
         apiService.getCategories(),
-        apiService.getLocations()
+        apiService.getLocations(),
+        apiService.getCatalogMetrics()
       ]);
 
       setProducts(prods);
       setCategories(cats);
       setLocations(locs);
+      setCatalogMetrics(metrics);
     } catch (err) {
       setError(err.message || 'Error cargando catálogo de productos');
     } finally {
@@ -142,6 +145,29 @@ export function ProductsModule() {
 
   return (
     <div className="space-y-6">
+      {/* Catalog Indicator Banner */}
+      {catalogMetrics && (
+        <div className="bg-slate-900/80 border border-emerald-500/30 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-emerald-400">Verificación del Catálogo Base</div>
+              <div className="text-sm font-extrabold text-white mt-0.5">
+                Referencias únicas cargadas: <span className="font-mono text-emerald-300">{catalogMetrics.total_existing_in_db} / 600</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-xs text-right">
+            <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold rounded-xl inline-block">
+              Faltan {catalogMetrics.total_missing_for_600} referencias para completar las 600
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Search, Filter & Action Bar */}
       <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto flex-1">

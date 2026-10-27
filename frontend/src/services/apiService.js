@@ -110,11 +110,13 @@ export const apiService = {
   // --- CYCLE COUNTS ---
   getCycleSchedules: () => request('/cycle-counts/schedules'),
   generateCycleSchedule: (generateData = {}) => request('/cycle-counts/generate', { method: 'POST', body: JSON.stringify(generateData) }),
-  completeCycleCountItem: (itemId, user_id = 'operador', notes = '') => {
+  completeCycleCountItem: (itemId, user_id = 'operador', notes = '', physicalQuantity = null) => {
     const query = new URLSearchParams();
     if (user_id) query.append('user_id', user_id);
     if (notes) query.append('notes', notes);
+    if (physicalQuantity !== null && physicalQuantity !== undefined) query.append('physical_quantity', physicalQuantity);
     const qStr = query.toString();
     return request(`/cycle-counts/items/${itemId}/complete${qStr ? `?${qStr}` : ''}`, { method: 'POST' });
-  }
+  },
+  bulkCompleteCycleCountItems: (payload) => request('/cycle-counts/bulk-complete', { method: 'POST', body: JSON.stringify(payload) })
 };

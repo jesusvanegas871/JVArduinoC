@@ -222,6 +222,9 @@ class CycleCountScheduleItem(Base):
     schedule_id = Column(Integer, ForeignKey("cycle_count_schedules.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     status = Column(String(50), default="PENDIENTE") # PENDIENTE, FINALIZADO, OMITIDO
+    expected_quantity = Column(Integer, nullable=True)
+    physical_quantity = Column(Integer, nullable=True)
+    discrepancy = Column(Integer, nullable=True) # physical - expected
     completed_at = Column(DateTime, nullable=True)
     completed_by = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)

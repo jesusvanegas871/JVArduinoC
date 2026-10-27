@@ -194,3 +194,85 @@ def test_annual_physical_count_max_5_limit(client_fixture):
     res = client.post(f"/api/cycle-counts/items/{item_id}/complete")
     assert res.status_code == 400
     assert "límite máximo anual de 5 conteos físicos" in res.json()["detail"]
+
+def test_bulk_cycle_count_completion_and_discrepancy(client_fixture):
+    client = client_fixture
+    db = TestingSessionLocal()
+    p1 = Product(sku="PROD-BULK-1", name="Bulk Product 1", total_quantity=10, annual_physical_count=0)
+    p2 = Product(sku="PROD-BULK-2", name="Bulk Product 2", total_quantity=15, annual_physical_count=0)
+    db.add_all([p1, p2])
+    db.commit()
+
+    sched = CycleCountSchedule(week_number=10, year=2026, scheduled_count=2, completed_count=0)
+    db.add(sched)
+    db.flush()
+
+    i1 = CycleCountScheduleItem(schedule_id=sched.id, product_id=p1.id, expected_quantity=10, status="PENDIENTE")
+    i2 = CycleCountScheduleItem(schedule_id=sched.id, product_id=p2.id, expected_quantity=15, status="PENDIENTE")
+    db.add_all([i1, i2])
+    db.commit()
+
+    sched_id = sched.id
+    i1_id = i1.id
+    i2_id = i2.id
+    db.close()
+
+    # Bulk completion call
+    payload = {
+        "schedule_id": sched_id,
+        "user_id": "operador_masivo",
+        "items": [
+            {"item_id": i1_id, "physical_quantity": 8, "notes": "Faltan 2 unidades en estante"},
+            {"item_id": i2_id, "physical_quantity": 15, "notes": "Conteo exacto"}
+        ]
+    }
+
+    res = client.post("/api/cycle-counts/bulk-complete", json=payload)
+    assert res.status_code == 200
+    res_data = res.json()
+
+    assert res_data["status"] == "COMPLETADO"
+    assert res_data["completed_count"] == 2
+
+    # Verify item 1 discrepancy (8 - 10 = -2)
+    item1_res = next(i for i in res_data["items"] if i["id"] == i1_id)
+    assert item1_res["status"] == "FINALIZADO"
+    assert item1_res["expected_quantity"] == 10
+    assert item1_res["physical_quantity"] == 8
+    assert item1_res["discrepancy"] == -2
+    assert item1_res["product"]["annual_physical_count"] == 1
+
+    # Verify item 2 discrepancy (15 - 15 = 0)
+    item2_res = next(i for i in res_data["items"] if i["id"] == i2_id)
+    assert item2_res["status"] == "FINALIZADO"
+    assert item2_res["expected_quantity"] == 15
+    assert item2_res["physical_quantity"] == 15
+    assert item2_res["discrepancy"] == 0
+    assert item2_res["product"]["annual_physical_count"] == 1
+
+def test_bulk_cycle_count_negative_quantity_rejected(client_fixture):
+    client = client_fixture
+    db = TestingSessionLocal()
+    p = Product(sku="PROD-NEG-TEST", name="Negative Qty Product", total_quantity=5, annual_physical_count=0)
+    db.add(p)
+    db.commit()
+
+    sched = CycleCountSchedule(week_number=11, year=2026, scheduled_count=1)
+    db.add(sched)
+    db.flush()
+
+    item = CycleCountScheduleItem(schedule_id=sched.id, product_id=p.id, expected_quantity=5, status="PENDIENTE")
+    db.add(item)
+    db.commit()
+
+    payload = {
+        "schedule_id": sched.id,
+        "user_id": "operador_test",
+        "items": [
+            {"item_id": item.id, "physical_quantity": -5}
+        ]
+    }
+    db.close()
+
+    res = client.post("/api/cycle-counts/bulk-complete", json=payload)
+    assert res.status_code == 422 or res.status_code == 400
