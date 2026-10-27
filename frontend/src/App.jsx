@@ -7,10 +7,18 @@ import { ControlPanel } from './components/ControlPanel';
 import { ManualPanel } from './components/ManualPanel';
 import { RutasPanel } from './components/RutasPanel';
 import { EventLog } from './components/EventLog';
+import { DashboardModule } from './components/DashboardModule';
+import { ProductsModule } from './components/ProductsModule';
+import { InventoryModule } from './components/InventoryModule';
+import { LocationsModule } from './components/LocationsModule';
+import { OrdersModule } from './components/OrdersModule';
+import { MissionsModule } from './components/MissionsModule';
+
 import { serialService } from './services/serialService';
 import { demoService } from './services/demoService';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'productos' | 'inventario' | 'ubicaciones' | 'pedidos' | 'misiones' | 'robotrack'
   const [connectionStatus, setConnectionStatus] = useState('desconectado'); // 'desconectado' | 'conectado' | 'error'
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [baudRate, setBaudRate] = useState(9600);
@@ -52,7 +60,6 @@ export default function App() {
   useEffect(() => {
     const handleTelemetry = (data) => {
       setTelemetry((prev) => {
-        // Sync active mode from firmware if present
         if (data.mode && data.mode !== prev.mode) {
           setActiveMode(data.mode);
           addEvent(`Modo confirmado por firmware: ${data.mode}`, 'success');
@@ -193,8 +200,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
       <Header
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
         activeMode={activeMode}
         onSelectMode={handleSelectMode}
         isConnected={connectionStatus === 'conectado'}
@@ -207,81 +216,104 @@ export default function App() {
         webSerialSupported={webSerialSupported}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (Status & Hardware Visualizers) */}
-        <div className="lg:col-span-1 space-y-6">
-          <StatusPanel
-            connectionStatus={connectionStatus}
-            robotStatus={telemetry.status}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+        {/* Render Tab Content based on Navigation Selection */}
+        {activeTab === 'dashboard' && <DashboardModule />}
+
+        {activeTab === 'productos' && <ProductsModule />}
+
+        {activeTab === 'inventario' && <InventoryModule />}
+
+        {activeTab === 'ubicaciones' && <LocationsModule />}
+
+        {activeTab === 'pedidos' && <OrdersModule />}
+
+        {activeTab === 'misiones' && (
+          <MissionsModule
+            isConnected={connectionStatus === 'conectado'}
             isDemoMode={isDemoMode}
+            onSendCommand={sendRobotCommand}
           />
+        )}
 
-          <SensorsVisualizer
-            left={telemetry.left}
-            center={telemetry.center}
-            right={telemetry.right}
-          />
+        {activeTab === 'robotrack' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column (Status & Hardware Visualizers) */}
+            <div className="lg:col-span-1 space-y-6">
+              <StatusPanel
+                connectionStatus={connectionStatus}
+                robotStatus={telemetry.status}
+                isDemoMode={isDemoMode}
+              />
 
-          <MotorsMonitor
-            mLeft={telemetry.mLeft}
-            mRight={telemetry.mRight}
-            dir={telemetry.dir}
-          />
-        </div>
+              <SensorsVisualizer
+                left={telemetry.left}
+                center={telemetry.center}
+                right={telemetry.right}
+              />
 
-        {/* Right Column (Mode Control Panel & Event Log) */}
-        <div className="lg:col-span-2 space-y-6 flex flex-col justify-between">
-          {/* Render Panel based on selected Active Mode */}
-          {activeMode === 'AUTO' && (
-            <ControlPanel
-              isConnected={connectionStatus === 'conectado'}
-              isDemoMode={isDemoMode}
-              buzzerActive={Boolean(telemetry.buzzer)}
-              onStart={() => sendRobotCommand('START', 'Iniciar Seguimiento (AUTO)')}
-              onStop={() => sendRobotCommand('STOP', 'Parada de Emergencia')}
-              onToggleBuzzer={() =>
-                sendRobotCommand(
-                  telemetry.buzzer ? 'BUZZER_OFF' : 'BUZZER_ON',
-                  telemetry.buzzer ? 'Apagar Zumbador' : 'Activar Zumbador'
-                )
-              }
-              onMonitorMode={() => sendRobotCommand('MONITOR', 'Modo Monitoreo')}
-            />
-          )}
+              <MotorsMonitor
+                mLeft={telemetry.mLeft}
+                mRight={telemetry.mRight}
+                dir={telemetry.dir}
+              />
+            </div>
 
-          {activeMode === 'MANUAL' && (
-            <ManualPanel
-              isConnected={connectionStatus === 'conectado'}
-              isDemoMode={isDemoMode}
-              speed={telemetry.speed || 180}
-              onSendSpeed={handleSendSpeed}
-              onSendCommand={sendRobotCommand}
-              onStop={() => sendRobotCommand('STOP', 'Parada de Emergencia')}
-            />
-          )}
+            {/* Right Column (Mode Control Panel & Event Log) */}
+            <div className="lg:col-span-2 space-y-6 flex flex-col justify-between">
+              {/* Render Panel based on selected Active Mode */}
+              {activeMode === 'AUTO' && (
+                <ControlPanel
+                  isConnected={connectionStatus === 'conectado'}
+                  isDemoMode={isDemoMode}
+                  buzzerActive={Boolean(telemetry.buzzer)}
+                  onStart={() => sendRobotCommand('START', 'Iniciar Seguimiento (AUTO)')}
+                  onStop={() => sendRobotCommand('STOP', 'Parada de Emergencia')}
+                  onToggleBuzzer={() =>
+                    sendRobotCommand(
+                      telemetry.buzzer ? 'BUZZER_OFF' : 'BUZZER_ON',
+                      telemetry.buzzer ? 'Apagar Zumbador' : 'Activar Zumbador'
+                    )
+                  }
+                  onMonitorMode={() => sendRobotCommand('MONITOR', 'Modo Monitoreo')}
+                />
+              )}
 
-          {activeMode === 'RUTAS' && (
-            <RutasPanel
-              isConnected={connectionStatus === 'conectado'}
-              isDemoMode={isDemoMode}
-              robotStatus={telemetry.status}
-              routeStep={telemetry.routeStep || 0}
-              routeTotal={telemetry.routeTotal || 0}
-              lastRef={telemetry.lastRef || 'Inicio'}
-              onSendCommand={sendRobotCommand}
-              onStop={() => sendRobotCommand('STOP', 'Parada / Cancelar Ruta')}
-            />
-          )}
+              {activeMode === 'MANUAL' && (
+                <ManualPanel
+                  isConnected={connectionStatus === 'conectado'}
+                  isDemoMode={isDemoMode}
+                  speed={telemetry.speed || 180}
+                  onSendSpeed={handleSendSpeed}
+                  onSendCommand={sendRobotCommand}
+                  onStop={() => sendRobotCommand('STOP', 'Parada de Emergencia')}
+                />
+              )}
 
-          {/* Event Log */}
-          <div className="flex-1">
-            <EventLog events={events} onClear={() => setEvents([])} />
+              {activeMode === 'RUTAS' && (
+                <RutasPanel
+                  isConnected={connectionStatus === 'conectado'}
+                  isDemoMode={isDemoMode}
+                  robotStatus={telemetry.status}
+                  routeStep={telemetry.routeStep || 0}
+                  routeTotal={telemetry.routeTotal || 0}
+                  lastRef={telemetry.lastRef || 'Inicio'}
+                  onSendCommand={sendRobotCommand}
+                  onStop={() => sendRobotCommand('STOP', 'Parada / Cancelar Ruta')}
+                />
+              )}
+
+              {/* Event Log */}
+              <div className="flex-1">
+                <EventLog events={events} onClear={() => setEvents([])} />
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       <footer className="border-t border-slate-900 bg-slate-950 py-3 px-6 text-center text-xs text-slate-600">
-        RoboTrack PlatformIO & React Interface &copy; {new Date().getFullYear()} - Multimodo AUTO / MANUAL / RUTAS
+        RoboTrack WMS & Logística &copy; {new Date().getFullYear()} - Sistema Integrado de Gestión de Almacenes y Operaciones Robóticas
       </footer>
     </div>
   );
