@@ -1,158 +1,121 @@
-# RoboTrack - Panel de Control, Telemetría & Rutas para Carrito Seguidor de Línea
+# RoboTrack WMS - Sistema Integrado de Gestión de Inventarios & Robótica Logística
 
-Este repositorio contiene la solución completa de firmware C++ (PlatformIO) y la aplicación web frontend en React + Vite + Tailwind CSS (**RoboTrack v2.0 Multimodo**) para un carrito robótico basado en **Arduino UNO**.
+RoboTrack WMS es un sistema web completo de gestión de almacenes (WMS - Warehouse Management System) y logística interna integrado con un vehículo de transporte robótico basado en **Arduino UNO**.
 
----
-
-## 1. Arquitectura del Proyecto y Modos de Funcionamiento
-
-RoboTrack integra **tres modos de funcionamiento seleccionables** desde la interfaz web, manteniendo un único controlador de motores en el firmware con parada previa antes de cambiar de modo:
-
-1. **Modo 1: AUTO — Seguidor de Línea**
-   - Mantiene la lógica de seguimiento de línea negra mediante los 3 sensores infrarrojos.
-   - Muestra las lecturas digitales en tiempo real.
-   - Inicia (`START`), detiene (`STOP`) e informa cuando la línea se pierde (`buscando`).
-
-2. **Modo 2: MANUAL — Control Direccional**
-   - Controles direccionales para avanzar, retroceder, girar e incluso rotar sobre su propio eje.
-   - Regulación de velocidad PWM de motores mediante comando `SPEED:<100..255>`.
-   - Soporte para control por teclado (**WASD / Flechas / Espacio** para Parada de Emergencia).
-   - **Tiempo límite de seguridad (Timeout 500ms):** El Arduino detiene automáticamente los motores si dejan de llegar comandos válidos.
-
-3. **Modo 3: RUTAS — Recorridos y Destinos**
-   - Mapa esquemático visual de la pista con origen, intersecciones de referencia y destinos.
-   - Secuenciador de rutas: avanzar hasta intersección, girar a la izquierda, girar a la derecha y detenerse.
-   - Gestión de rutas: plantillas predefinidas y guardado de rutas personalizadas en `localStorage`.
-   - Monitor de progreso de la ruta, número de paso activo y última referencia detectada.
+El proyecto diferencia estrictamente entre las **operaciones digitales de inventario** (órdenes, reservas, trazabilidad auditable) y las **acciones físicas del robot** (desplazamientos en línea, lectura de intersecciones por sensores IR).
 
 ---
 
-## 2. Inspección del Hardware y Requisitos de Navegación
+## 1. Arquitectura General del Sistema
 
-### Análisis de Sensores Infrarrojos (3x IR)
-El robot cuenta con 3 sensores infrarrojos digitales colocados en línea frontal (**Pin D8, D9, D10**):
+El sistema se compone de tres capas principales:
 
-* **Capacidades Físicas Reales:**
-  - **Seguimiento de Línea:** Diferencia entre línea negra (`1` / `LOW`) y fondo claro (`0` / `HIGH`).
-  - **Detección de Intersecciones:** Detecta cruces en T o en X cuando los tres sensores detectan línea negra (`1 1 1`).
-  - **Decisiones de Giro:** Ejecuta giros programados en cruces rotando hasta que el sensor central se relocaliza sobre la línea.
-
-* **Documentación de Limitaciones Hardware:**
-  - **Sin Odometría ni Encoders:** El chasis no dispone de encoders en las ruedas para medir distancia en centímetros o metros.
-  - **Sin Posicionamiento Absoluto:** No incluye GPS interno, IMU ni sensor ultrasónico para evasión de obstáculos en espacio libre.
-  - **Navegación Referenciada:** La navegación física se realiza estrictamente sobre líneas marcadas en el suelo e intersecciones detectadas. No se simula odometría libre inexistente.
-
----
-
-## 3. Pinout y Conexiones Arduino UNO
-
-| Componente | Pin Arduino UNO | Descripción |
-| :--- | :--- | :--- |
-| **Driver L298N** | `D5` (PWM) | Motor Izquierdo ENA |
-| | `D2` | Motor Izquierdo IN1 |
-| | `D3` | Motor Izquierdo IN2 |
-| | `D4` | Motor Derecho IN3 |
-| | `D7` | Motor Derecho IN4 |
-| | `D6` (PWM) | Motor Derecho ENB |
-| **Sensores IR** | `D8` | Sensor Infrarrojo Izquierdo |
-| | `D9` | Sensor Infrarrojo Central |
-| | `D10` | Sensor Infrarrojo Derecho |
-| **Zumbador** | `D11` | Buzzer piezoeléctrico |
-| **Alimentación** | Batería 9V / 12V | Driver L298N y Arduino (VCC/GND común) |
-
----
-
-## 4. Protocolo de Comunicación Serial
-
-La comunicación opera a **9600 baudios** por defecto mediante la Web Serial API (`Serial`).
-
-### A. Telemetría Enviada por Arduino (JSON continuo cada 100 ms)
-```json
-{
-  "mode": "AUTO",
-  "status": "seguimiento",
-  "left": 0,
-  "center": 1,
-  "right": 0,
-  "dir": "adelante",
-  "mLeft": 180,
-  "mRight": 180,
-  "speed": 180,
-  "buzzer": false,
-  "routeStep": 1,
-  "routeTotal": 3,
-  "lastRef": "Intersección 1"
-}
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend React + Vite                │
+│ (Dashboard, Productos, Inventario, Ubicaciones, Orders) │
+└─────────────┬─────────────────────────────┬─────────────┘
+              │ REST API (HTTP)             │ Web Serial / Demo
+              ▼                             ▼
+┌───────────────────────────┐  ┌───────────────────────────┐
+│    Backend FastAPI        │  │   Arduino UNO Firmware    │
+│ (SQLAlchemy + SQLite)     │  │ (Sensores IR + L298N)     │
+└───────────────────────────┘  └───────────────────────────┘
 ```
 
-### B. Comandos Seriales Soportados por el Firmware
+1. **Backend FastAPI (Python & SQLAlchemy):**
+   - Transacciones de inventario seguras y atómicas.
+   - Gestión de stock disponible (`disponible = total - reservado`).
+   - Registro auditable de movimientos de entrada, salida, traslado y ajustes.
+   - Ciclo de vida completo de órdenes de transporte interno y misiones del robot.
+   - Idempotencia en eventos de misiones para prevenir deducciones dobles.
 
-* **Comandos Globales:**
-  - `STOP` / `EMERGENCY_STOP`: Detiene motores inmediatamente en cualquier modo.
-  - `MODE:AUTO`: Cambia a modo autónomo seguidor de línea.
-  - `MODE:MANUAL`: Cambia a modo de control manual direccional.
-  - `MODE:RUTAS`: Cambia a modo de ejecución de rutas.
-  - `SPEED:<valor>`: Establece la velocidad PWM (rango 100 a 255).
-  - `BUZZER_ON` / `BUZZER_OFF`: Controla la alerta sonora (D11).
-  - `MONITOR`: Mantiene motores detenidos y transmite solo lectura de sensores.
+2. **Frontend React + Vite + Tailwind CSS:**
+   - Interfaz en español con diseño B2B oscuro y acentos verdes.
+   - Módulos: **Dashboard**, **Productos**, **Inventario**, **Ubicaciones**, **Pedidos**, **Misiones** y **RoboTrack Control**.
+   - Comunicación con backend FastAPI y soporte de control directo al Arduino vía **Web Serial API** y **Modo Demostración Simulado**.
 
-* **Comandos de Modo MANUAL:**
-  - `MANUAL:FW`: Avanza hacia adelante.
-  - `MANUAL:BW`: Retrocede.
-  - `MANUAL:LEFT`: Giro suave a la izquierda.
-  - `MANUAL:RIGHT`: Giro suave a la derecha.
-  - `MANUAL:SPIN_LEFT`: Rotación sobre su eje a la izquierda.
-  - `MANUAL:SPIN_RIGHT`: Rotación sobre su eje a la derecha.
-  - `MANUAL:STOP`: Detiene movimiento manual.
-
-* **Comandos de Modo RUTAS:**
-  - `ROUTE:CLEAR`: Limpia el búfer de pasos en el firmware.
-  - `ROUTE:ADD:<PASO>`: Añade instrucción (`FW_REF`, `TURN_LEFT`, `TURN_RIGHT`, `STOP`).
-  - `ROUTE:START`: Inicia la ejecución secuencial de la ruta cargada.
-  - `ROUTE:PAUSE` / `ROUTE:STOP`: Detiene la ejecución de la ruta.
+3. **Firmware C++ (Arduino UNO & PlatformIO):**
+   - Control de motores L298N y lectura de 3 sensores infrarrojos reflectivos.
+   - Tres modos de trabajo: **AUTO** (seguidor de línea), **MANUAL** (control direccional) y **RUTAS** (secuenciación en intersecciones).
 
 ---
 
-## 5. Instrucciones de Compilación y Ejecución
+## 2. Estructura de la Base de Datos
 
-### A. Cargar Firmware C++ al Arduino UNO
+- **`categories`**: Categorización del catálogo.
+- **`products`**: Productos con SKU único, nombre, unidad de medida, total, reservado, disponible (propiedad calculada) y stock mínimo.
+- **`locations`**: Ubicaciones del almacén (`ALM-01`, `REC-01`, `DES-01`, `ENT-01`).
+- **`stock_locations`**: Cantidad de un producto por ubicación específica.
+- **`inventory_movements`**: Registro auditable histórico (ENTRADA, SALIDA, TRASLADO, AJUSTE, RECOGIDA, ENTREGA).
+- **`orders`**: Solicitudes de transporte interno con trazabilidad de estado (Pendiente, Reservada, Asignada, En ejecución, Completada, Cancelada, Fallida).
+- **`missions`**: Misiones asociadas a órdenes para asignación al robot RoboTrack.
+- **`mission_events`**: Historial de eventos de ejecución física y digital con claves de idempotencia.
+
+---
+
+## 3. Guía de Inicio y Ejecución
+
+### Requisitos Previos
+- Python 3.10+
+- Node.js 18+ y npm
+
+### A. Iniciar el Backend (FastAPI)
 ```bash
-# Compilar firmware con PlatformIO
-pio run
+# Crear entorno virtual e instalar dependencias (si aplica)
+python3 -m venv venv
+./venv/bin/pip install fastapi uvicorn sqlalchemy pydantic pytest httpx
 
-# Ssubir al Arduino UNO conectado
-pio run --target upload
+# Ejecutar el servidor backend en http://localhost:8000
+PYTHONPATH=. ./venv/bin/uvicorn backend.main:app --reload --port 8000
 ```
 
-### B. Ejecutar el Frontend Web
+### B. Iniciar el Frontend (React + Vite)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Abre en tu navegador (Chrome, Edge u Opera): `http://localhost:5173`
+Abre en el navegador: `http://localhost:5173`
+
+### C. Pruebas Unitarias Automatizadas
+```bash
+# Ejecutar suite completa de pruebas backend con pytest
+PYTHONPATH=. ./venv/bin/pytest backend/tests/test_api.py
+```
 
 ---
 
-## 6. Guía de Pruebas Físicas y Demostración
+## 4. Flujo Operativo Completo (Desde Producto hasta Misión)
 
-1. **Pruebas en Modo AUTO (Seguidor de línea):**
-   - Ubica el carrito sobre una pista con cinta aislante negra.
-   - Selecciona **AUTO — Seguidor** en la barra superior.
-   - Haz clic en **Iniciar Seguimiento**. Verifica que siga la línea y que al levantar el robot pase al estado `buscando`.
+1. **Creación de Producto:** El usuario registra un producto con su SKU único en la pestaña *Productos*.
+2. **Entrada de Mercancía:** Se registra la cantidad en una ubicación (ej. `ALM-01`) mediante la pestaña *Inventario*.
+3. **Creación de Orden de Transporte:** En *Pedidos*, un operador solicita llevar $N$ unidades de `ALM-01` a `ENT-01`. El backend verifica la disponibilidad y **reserva el stock de forma transaccional**.
+4. **Asignación de Misión:** En *Misiones*, se vincula la orden a una ruta compatible del robot RoboTrack.
+5. **Despacho del Robot:** Se envía la secuencia de ruta al Arduino vía Web Serial / Demo.
+6. **Confirmación de Recogida:** Al llegar a origen, el operador o evento de sistema confirma la recogida. El backend registra un movimiento auditable de `RECOGIDA`.
+7. **Confirmación de Entrega:** Al llegar a destino, se confirma la entrega. El backend registra la `ENTREGA`, incrementa el stock en destino y liquida la reserva.
 
-2. **Pruebas en Modo MANUAL (Control direccional):**
-   - Selecciona **MANUAL — Control**.
-   - Ajusta el deslizador de velocidad PWM (ej. 180 PWM).
-   - Utiliza las teclas **WASD / Flechas** o la cruceta en pantalla.
-   - Suelta las teclas y verifica que el robot se detenga. Desconecta o interrumpe la señal para comprobar que el **timeout de 500ms** detiene los motores en el firmware.
+---
 
-3. **Pruebas en Modo RUTAS (Recorridos en mapa):**
-   - Selecciona **RUTAS — Recorridos**.
-   - Selecciona una plantilla (ej. *Ruta 1: Directo a Destino A*) o construye tu secuencia.
-   - Presiona **Iniciar Ruta Programada**.
-   - Observa cómo el robot avanza hasta la intersección (`1 1 1`), ejecuta el giro programado y actualiza el mapa esquemático y el porcentaje de progreso hasta completar el recorrido.
+## 5. Capacidades Reales del Hardware vs Limitaciones
 
-4. **Pruebas en Modo Demostración Simulado:**
-   - Si no dispones del hardware físico conectado, haz clic en **Activar Demo**.
-   - Podrás probar la respuesta gráfica de la interfaz en los 3 modos de forma completamente simulada e aislada del puerto físico.
+* **Capacidades Reales del Robot (Arduino UNO + 3x IR):**
+  - Tracking autónomo de línea negra.
+  - Detección de intersecciones y giros en cruces rotando sobre el sensor central.
+  - Parada de emergencia y timeout de seguridad en modo manual (500ms).
+
+* **Limitaciones Documentadas y Confirmación Manual:**
+  - **Sin Odometría ni Sensores de Carga:** El robot no posee encoders en ruedas ni balanza física para detectar si lleva una carga.
+  - **Diferenciación de Ubicaciones:** Las ubicaciones de inventario son lógicas en la base de datos; la llegada del robot a una estación requiere la confirmación manual autorizada o la lectura de un cruce de referencia en la pista.
+
+---
+
+## 6. Resumen de Módulos Modificados / Creados
+
+- `backend/models.py`, `backend/schemas.py`, `backend/database.py`: Estructura ORM y migración/semilla.
+- `backend/routers/`: Routers REST para `products`, `inventory`, `locations`, `orders`, `missions`, `dashboard`.
+- `backend/tests/test_api.py`: Pruebas de integración y unitarias de API con pytest.
+- `frontend/src/services/apiService.js`: Cliente HTTP centralizado.
+- `frontend/src/components/`: Componentes WMS (`DashboardModule`, `ProductsModule`, `InventoryModule`, `LocationsModule`, `OrdersModule`, `MissionsModule`).
+- `frontend/src/App.jsx` y `Header.jsx`: Integración de navegación por pestañas conservando el panel RoboTrack.
