@@ -22,24 +22,60 @@ const int PIN_BUZZER = 11;
 // Sensor Detection Threshold (LOW = Black line detected for active-low IR sensors)
 const int LINE_DETECTED = LOW;
 
-// Motor Speed Constants (0 - 255)
-const int BASE_SPEED = 180;
-const int TURN_SPEED = 150;
+// Motor Speed Constants & Variables
+const int DEFAULT_SPEED = 180;
+const int MIN_SPEED = 100;
+const int MAX_SPEED = 255;
+
+int currentSpeed = DEFAULT_SPEED;
+int turnSpeed = 150;
 
 // ==========================================
-// ROBOT STATES
+// OPERATING MODES & ROBOT STATES
 // ==========================================
-enum RobotState {
-  STATE_STOPPED,
-  STATE_FOLLOWING,
-  STATE_SEARCHING,
-  STATE_MONITOR
+enum OperatingMode {
+  MODE_AUTO,
+  MODE_MANUAL,
+  MODE_RUTAS
 };
 
-RobotState currentState = STATE_STOPPED;
+enum RobotStatus {
+  STATUS_STOPPED,
+  STATUS_FOLLOWING,
+  STATUS_SEARCHING,
+  STATUS_MANUAL,
+  STATUS_ROUTE_EXECUTING,
+  STATUS_ROUTE_COMPLETED,
+  STATUS_MONITOR
+};
+
+OperatingMode currentMode = MODE_AUTO;
+RobotStatus currentStatus = STATUS_STOPPED;
+
 bool buzzerActive = false;
 unsigned long lastTelemetryTime = 0;
 const unsigned long TELEMETRY_INTERVAL = 100; // ms
+
+// Safety Timeout for Manual Mode (ms)
+unsigned long lastManualCmdTime = 0;
+const unsigned long MANUAL_TIMEOUT = 500; // ms
+bool manualMoving = false;
+
+// Route Constants & Storage
+const int MAX_ROUTE_STEPS = 20;
+enum RouteStepType {
+  STEP_FW_REF,      // Move forward following line until intersection reference
+  STEP_TURN_LEFT,   // Turn left at intersection
+  STEP_TURN_RIGHT,  // Turn right at intersection
+  STEP_STOP         // Stop at destination
+};
+
+RouteStepType routeSteps[MAX_ROUTE_STEPS];
+int routeTotalSteps = 0;
+int currentRouteStepIndex = 0;
+String lastReferenceName = "Inicio";
+bool intersectionTriggered = false;
+unsigned long intersectionDebounceTime = 0;
 
 // Telemetry variables
 int rawLeft = 0;
@@ -51,14 +87,36 @@ bool lineRight = false;
 int motorLeftSpeed = 0;
 int motorRightSpeed = 0;
 String currentDirection = "detenido";
-String currentStatusStr = "detenido";
+
+// Helper functions for status and mode strings
+String getModeString() {
+  switch (currentMode) {
+    case MODE_AUTO: return "AUTO";
+    case MODE_MANUAL: return "MANUAL";
+    case MODE_RUTAS: return "RUTAS";
+    default: return "AUTO";
+  }
+}
+
+String getStatusString() {
+  switch (currentStatus) {
+    case STATUS_STOPPED: return "detenido";
+    case STATUS_FOLLOWING: return "seguimiento";
+    case STATUS_SEARCHING: return "buscando";
+    case STATUS_MANUAL: return "manual";
+    case STATUS_ROUTE_EXECUTING: return "ejecutando_ruta";
+    case STATUS_ROUTE_COMPLETED: return "ruta_completada";
+    case STATUS_MONITOR: return "monitoreo";
+    default: return "detenido";
+  }
+}
 
 // ==========================================
 // MOTOR CONTROL FUNCTIONS
 // ==========================================
 void setMotors(int speedLeft, int speedRight, bool dirLeftFwd, bool dirRightFwd) {
-  motorLeftSpeed = abs(speedLeft);
-  motorRightSpeed = abs(speedRight);
+  motorLeftSpeed = constrain(abs(speedLeft), 0, 255);
+  motorRightSpeed = constrain(abs(speedRight), 0, 255);
 
   digitalWrite(IN1, dirLeftFwd ? HIGH : LOW);
   digitalWrite(IN2, dirLeftFwd ? LOW : HIGH);
@@ -79,26 +137,52 @@ void stopMotors() {
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, LOW);
   analogWrite(ENB, 0);
+  manualMoving = false;
 }
 
-void moveForward() {
+void moveForward(int speed) {
   currentDirection = "adelante";
-  setMotors(BASE_SPEED, BASE_SPEED, true, true);
+  setMotors(speed, speed, true, true);
 }
 
-void turnLeft() {
+void moveBackward(int speed) {
+  currentDirection = "atras";
+  setMotors(speed, speed, false, false);
+}
+
+void turnLeft(int speed) {
   currentDirection = "izquierda";
-  setMotors(TURN_SPEED / 2, TURN_SPEED, false, true);
+  setMotors(speed / 2, speed, false, true);
 }
 
-void turnRight() {
+void turnRight(int speed) {
   currentDirection = "derecha";
-  setMotors(TURN_SPEED, TURN_SPEED / 2, true, false);
+  setMotors(speed, speed / 2, true, false);
 }
 
-void spinLeft() {
+void spinLeft(int speed) {
   currentDirection = "izquierda";
-  setMotors(TURN_SPEED, TURN_SPEED, false, true);
+  setMotors(speed, speed, false, true);
+}
+
+void spinRight(int speed) {
+  currentDirection = "derecha";
+  setMotors(speed, speed, true, false);
+}
+
+// Switch Mode safely
+void switchMode(OperatingMode newMode) {
+  stopMotors();
+  currentMode = newMode;
+  currentStatus = STATUS_STOPPED;
+  manualMoving = false;
+}
+
+// Emergency stop handler
+void emergencyStop() {
+  stopMotors();
+  currentStatus = STATUS_STOPPED;
+  manualMoving = false;
 }
 
 // ==========================================
@@ -110,11 +194,13 @@ void setBuzzer(bool active) {
 }
 
 // ==========================================
-// TELEMETRY REPORTR (JSON format)
+// TELEMETRY REPORT (JSON format)
 // ==========================================
 void sendTelemetry() {
-  Serial.print("{\"status\":\"");
-  Serial.print(currentStatusStr);
+  Serial.print("{\"mode\":\"");
+  Serial.print(getModeString());
+  Serial.print("\",\"status\":\"");
+  Serial.print(getStatusString());
   Serial.print("\",\"left\":");
   Serial.print(lineLeft ? 1 : 0);
   Serial.print(",\"center\":");
@@ -127,9 +213,17 @@ void sendTelemetry() {
   Serial.print(motorLeftSpeed);
   Serial.print(",\"mRight\":");
   Serial.print(motorRightSpeed);
+  Serial.print(",\"speed\":");
+  Serial.print(currentSpeed);
   Serial.print(",\"buzzer\":");
   Serial.print(buzzerActive ? "true" : "false");
-  Serial.println("}");
+  Serial.print(",\"routeStep\":");
+  Serial.print(routeTotalSteps > 0 ? (currentRouteStepIndex + 1) : 0);
+  Serial.print(",\"routeTotal\":");
+  Serial.print(routeTotalSteps);
+  Serial.print(",\"lastRef\":\"");
+  Serial.print(lastReferenceName);
+  Serial.println("\"}");
 }
 
 // ==========================================
@@ -137,23 +231,124 @@ void sendTelemetry() {
 // ==========================================
 void parseCommand(String cmd) {
   cmd.trim();
+
+  // Extract command from JSON wrapper if present (e.g. {"CMD":"..."})
+  if (cmd.startsWith("{") && cmd.endsWith("}")) {
+    int cmdIdx = cmd.indexOf("\"CMD\":\"");
+    if (cmdIdx != -1) {
+      int startQuote = cmdIdx + 7;
+      int endQuote = cmd.indexOf("\"", startQuote);
+      if (endQuote != -1) {
+        cmd = cmd.substring(startQuote, endQuote);
+      }
+    }
+  }
+
   cmd.toUpperCase();
 
-  if (cmd == "START" || cmd == "{\"CMD\":\"START\"}") {
-    currentState = STATE_FOLLOWING;
-    currentStatusStr = "seguimiento";
-  } else if (cmd == "STOP" || cmd == "{\"CMD\":\"STOP\"}") {
-    currentState = STATE_STOPPED;
-    currentStatusStr = "detenido";
-    stopMotors();
-  } else if (cmd == "BUZZER_ON" || cmd == "{\"CMD\":\"BUZZER_ON\"}") {
+  // Emergency stop & global commands
+  if (cmd == "STOP" || cmd == "EMERGENCY_STOP") {
+    emergencyStop();
+    return;
+  } else if (cmd == "BUZZER_ON") {
     setBuzzer(true);
-  } else if (cmd == "BUZZER_OFF" || cmd == "{\"CMD\":\"BUZZER_OFF\"}") {
+    return;
+  } else if (cmd == "BUZZER_OFF") {
     setBuzzer(false);
-  } else if (cmd == "MONITOR" || cmd == "{\"CMD\":\"MONITOR\"}") {
-    currentState = STATE_MONITOR;
-    currentStatusStr = "monitoreo";
-    stopMotors();
+    return;
+  } else if (cmd == "MONITOR") {
+    switchMode(currentMode);
+    currentStatus = STATUS_MONITOR;
+    return;
+  }
+
+  // Mode switching
+  if (cmd == "MODE:AUTO" || cmd == "SET_MODE AUTO") {
+    switchMode(MODE_AUTO);
+    return;
+  } else if (cmd == "MODE:MANUAL" || cmd == "SET_MODE MANUAL") {
+    switchMode(MODE_MANUAL);
+    return;
+  } else if (cmd == "MODE:RUTAS" || cmd == "SET_MODE RUTAS") {
+    switchMode(MODE_RUTAS);
+    return;
+  }
+
+  // Speed setting
+  if (cmd.startsWith("SPEED:")) {
+    int val = cmd.substring(6).toInt();
+    if (val >= MIN_SPEED && val <= MAX_SPEED) {
+      currentSpeed = val;
+      turnSpeed = constrain(val - 30, MIN_SPEED, MAX_SPEED);
+    }
+    return;
+  }
+
+  // Commands based on current mode
+  if (currentMode == MODE_AUTO) {
+    if (cmd == "START") {
+      currentStatus = STATUS_FOLLOWING;
+    }
+  } else if (currentMode == MODE_MANUAL) {
+    if (cmd.startsWith("MANUAL:")) {
+      String subCmd = cmd.substring(7);
+      lastManualCmdTime = millis();
+      currentStatus = STATUS_MANUAL;
+
+      if (subCmd == "FW" || subCmd == "FORWARD") {
+        moveForward(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "BW" || subCmd == "BACKWARD") {
+        moveBackward(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "LEFT") {
+        turnLeft(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "RIGHT") {
+        turnRight(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "SPIN_LEFT") {
+        spinLeft(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "SPIN_RIGHT") {
+        spinRight(currentSpeed);
+        manualMoving = true;
+      } else if (subCmd == "STOP") {
+        stopMotors();
+        currentStatus = STATUS_STOPPED;
+      }
+    }
+  } else if (currentMode == MODE_RUTAS) {
+    if (cmd == "ROUTE:CLEAR") {
+      routeTotalSteps = 0;
+      currentRouteStepIndex = 0;
+      lastReferenceName = "Inicio";
+      stopMotors();
+      currentStatus = STATUS_STOPPED;
+    } else if (cmd.startsWith("ROUTE:ADD:")) {
+      String stepStr = cmd.substring(10);
+      if (routeTotalSteps < MAX_ROUTE_STEPS) {
+        if (stepStr == "FW_REF") {
+          routeSteps[routeTotalSteps++] = STEP_FW_REF;
+        } else if (stepStr == "TURN_LEFT") {
+          routeSteps[routeTotalSteps++] = STEP_TURN_LEFT;
+        } else if (stepStr == "TURN_RIGHT") {
+          routeSteps[routeTotalSteps++] = STEP_TURN_RIGHT;
+        } else if (stepStr == "STOP") {
+          routeSteps[routeTotalSteps++] = STEP_STOP;
+        }
+      }
+    } else if (cmd == "ROUTE:START" || cmd == "START") {
+      if (routeTotalSteps > 0) {
+        currentRouteStepIndex = 0;
+        currentStatus = STATUS_ROUTE_EXECUTING;
+        lastReferenceName = "Inicio";
+        intersectionTriggered = false;
+      }
+    } else if (cmd == "ROUTE:PAUSE" || cmd == "ROUTE:STOP") {
+      stopMotors();
+      currentStatus = STATUS_STOPPED;
+    }
   }
 }
 
@@ -170,7 +365,6 @@ void checkSerialInput() {
 // SETUP & LOOP
 // ==========================================
 void setup() {
-  // Initialize Serial at 9600 baud rate
   Serial.begin(9600);
 
   // Initialize Motor Pins
@@ -193,7 +387,6 @@ void setup() {
 }
 
 void loop() {
-  // Read Serial commands from Frontend
   checkSerialInput();
 
   // Read Sensors
@@ -205,47 +398,104 @@ void loop() {
   lineCenter = (rawCenter == LINE_DETECTED);
   lineRight = (rawRight == LINE_DETECTED);
 
-  // State Machine Logic
-  switch (currentState) {
-    case STATE_STOPPED:
+  // Handle Manual Mode Safety Timeout
+  if (currentMode == MODE_MANUAL && manualMoving) {
+    if (millis() - lastManualCmdTime > MANUAL_TIMEOUT) {
       stopMotors();
-      currentStatusStr = "detenido";
-      break;
+      currentStatus = STATUS_STOPPED;
+    }
+  }
 
-    case STATE_MONITOR:
-      stopMotors();
-      currentStatusStr = "monitoreo";
-      break;
-
-    case STATE_FOLLOWING:
-    case STATE_SEARCHING:
+  // Handle Mode Logic
+  if (currentStatus == STATUS_STOPPED || currentStatus == STATUS_MONITOR) {
+    stopMotors();
+  } else if (currentMode == MODE_AUTO) {
+    if (currentStatus == STATUS_FOLLOWING || currentStatus == STATUS_SEARCHING) {
       if (lineCenter && !lineLeft && !lineRight) {
-        // Line straight ahead
-        currentState = STATE_FOLLOWING;
-        currentStatusStr = "seguimiento";
-        moveForward();
+        currentStatus = STATUS_FOLLOWING;
+        moveForward(currentSpeed);
       } else if (lineLeft && !lineRight) {
-        // Line on the left
-        currentState = STATE_FOLLOWING;
-        currentStatusStr = "seguimiento";
-        turnLeft();
+        currentStatus = STATUS_FOLLOWING;
+        turnLeft(currentSpeed);
       } else if (lineRight && !lineLeft) {
-        // Line on the right
-        currentState = STATE_FOLLOWING;
-        currentStatusStr = "seguimiento";
-        turnRight();
+        currentStatus = STATUS_FOLLOWING;
+        turnRight(currentSpeed);
       } else if (lineLeft && lineCenter && lineRight) {
-        // All sensors detect line (crossing or wide line)
-        currentState = STATE_FOLLOWING;
-        currentStatusStr = "seguimiento";
-        moveForward();
+        currentStatus = STATUS_FOLLOWING;
+        moveForward(currentSpeed);
       } else if (!lineLeft && !lineCenter && !lineRight) {
-        // Lost line -> Searching
-        currentState = STATE_SEARCHING;
-        currentStatusStr = "buscando";
-        spinLeft(); // Spin to relocate line
+        currentStatus = STATUS_SEARCHING;
+        spinLeft(currentSpeed);
       }
-      break;
+    }
+  } else if (currentMode == MODE_RUTAS) {
+    if (currentStatus == STATUS_ROUTE_EXECUTING) {
+      if (currentRouteStepIndex >= routeTotalSteps) {
+        stopMotors();
+        currentStatus = STATUS_ROUTE_COMPLETED;
+        lastReferenceName = "Destino Alcanzado";
+      } else {
+        RouteStepType currentStep = routeSteps[currentRouteStepIndex];
+
+        switch (currentStep) {
+          case STEP_FW_REF: {
+            // Check for intersection reference: all 3 sensors hit black or T-junction
+            bool isIntersection = (lineLeft && lineCenter && lineRight) || (lineLeft && lineRight);
+
+            if (isIntersection && !intersectionTriggered && (millis() - intersectionDebounceTime > 500)) {
+              intersectionTriggered = true;
+              intersectionDebounceTime = millis();
+              currentRouteStepIndex++;
+              lastReferenceName = "Intersección " + String(currentRouteStepIndex);
+            } else {
+              if (!isIntersection) {
+                intersectionTriggered = false;
+              }
+              // Normal line following towards reference
+              if (lineCenter && !lineLeft && !lineRight) {
+                moveForward(currentSpeed);
+              } else if (lineLeft && !lineRight) {
+                turnLeft(currentSpeed);
+              } else if (lineRight && !lineLeft) {
+                turnRight(currentSpeed);
+              } else {
+                moveForward(currentSpeed);
+              }
+            }
+            break;
+          }
+
+          case STEP_TURN_LEFT: {
+            // Spin left until center sensor re-acquires the line
+            spinLeft(currentSpeed);
+            if (lineCenter && !lineLeft && (millis() - intersectionDebounceTime > 300)) {
+              currentRouteStepIndex++;
+              lastReferenceName = "Giro Izquierda OK";
+              intersectionDebounceTime = millis();
+            }
+            break;
+          }
+
+          case STEP_TURN_RIGHT: {
+            // Spin right until center sensor re-acquires the line
+            spinRight(currentSpeed);
+            if (lineCenter && !lineRight && (millis() - intersectionDebounceTime > 300)) {
+              currentRouteStepIndex++;
+              lastReferenceName = "Giro Derecha OK";
+              intersectionDebounceTime = millis();
+            }
+            break;
+          }
+
+          case STEP_STOP: {
+            stopMotors();
+            currentStatus = STATUS_ROUTE_COMPLETED;
+            lastReferenceName = "Destino";
+            break;
+          }
+        }
+      }
+    }
   }
 
   // Periodic Telemetry Transmission
