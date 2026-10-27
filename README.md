@@ -1,30 +1,50 @@
-# RoboTrack - Panel de Control & Telemetría para Carrito Seguidor de Línea
+# RoboTrack - Panel de Control, Telemetría & Rutas para Carrito Seguidor de Línea
 
-Este repositorio contiene la solución completa de firmware (C++ / PlatformIO) y la aplicación web frontend de monitoreo en tiempo real (**RoboTrack**) para un carrito robótico seguidor de línea basado en **Arduino UNO**.
-
----
-
-## 1. Arquitectura del Proyecto
-
-```text
-.
-├── platformio.ini       # Configuración de PlatformIO para Arduino UNO
-├── src/
-│   └── main.cpp         # Firmware C++ (Control L298N, 3x IR, Buzzer y Protocolo Serial JSON)
-├── frontend/            # Panel de Control Web en React + Vite + Tailwind CSS
-│   ├── src/
-│   │   ├── components/  # Header, StatusPanel, SensorsVisualizer, MotorsMonitor, ControlPanel, EventLog
-│   │   ├── services/    # serialService (Web Serial API) y demoService (Simulador)
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   └── vite.config.js
-└── README.md
-```
+Este repositorio contiene la solución completa de firmware C++ (PlatformIO) y la aplicación web frontend en React + Vite + Tailwind CSS (**RoboTrack v2.0 Multimodo**) para un carrito robótico basado en **Arduino UNO**.
 
 ---
 
-## 2. Hardware y Conexiones Arduino UNO
+## 1. Arquitectura del Proyecto y Modos de Funcionamiento
+
+RoboTrack integra **tres modos de funcionamiento seleccionables** desde la interfaz web, manteniendo un único controlador de motores en el firmware con parada previa antes de cambiar de modo:
+
+1. **Modo 1: AUTO — Seguidor de Línea**
+   - Mantiene la lógica de seguimiento de línea negra mediante los 3 sensores infrarrojos.
+   - Muestra las lecturas digitales en tiempo real.
+   - Inicia (`START`), detiene (`STOP`) e informa cuando la línea se pierde (`buscando`).
+
+2. **Modo 2: MANUAL — Control Direccional**
+   - Controles direccionales para avanzar, retroceder, girar e incluso rotar sobre su propio eje.
+   - Regulación de velocidad PWM de motores mediante comando `SPEED:<100..255>`.
+   - Soporte para control por teclado (**WASD / Flechas / Espacio** para Parada de Emergencia).
+   - **Tiempo límite de seguridad (Timeout 500ms):** El Arduino detiene automáticamente los motores si dejan de llegar comandos válidos.
+
+3. **Modo 3: RUTAS — Recorridos y Destinos**
+   - Mapa esquemático visual de la pista con origen, intersecciones de referencia y destinos.
+   - Secuenciador de rutas: avanzar hasta intersección, girar a la izquierda, girar a la derecha y detenerse.
+   - Gestión de rutas: plantillas predefinidas y guardado de rutas personalizadas en `localStorage`.
+   - Monitor de progreso de la ruta, número de paso activo y última referencia detectada.
+
+---
+
+## 2. Inspección del Hardware y Requisitos de Navegación
+
+### Análisis de Sensores Infrarrojos (3x IR)
+El robot cuenta con 3 sensores infrarrojos digitales colocados en línea frontal (**Pin D8, D9, D10**):
+
+* **Capacidades Físicas Reales:**
+  - **Seguimiento de Línea:** Diferencia entre línea negra (`1` / `LOW`) y fondo claro (`0` / `HIGH`).
+  - **Detección de Intersecciones:** Detecta cruces en T o en X cuando los tres sensores detectan línea negra (`1 1 1`).
+  - **Decisiones de Giro:** Ejecuta giros programados en cruces rotando hasta que el sensor central se relocaliza sobre la línea.
+
+* **Documentación de Limitaciones Hardware:**
+  - **Sin Odometría ni Encoders:** El chasis no dispone de encoders en las ruedas para medir distancia en centímetros o metros.
+  - **Sin Posicionamiento Absoluto:** No incluye GPS interno, IMU ni sensor ultrasónico para evasión de obstáculos en espacio libre.
+  - **Navegación Referenciada:** La navegación física se realiza estrictamente sobre líneas marcadas en el suelo e intersecciones detectadas. No se simula odometría libre inexistente.
+
+---
+
+## 3. Pinout y Conexiones Arduino UNO
 
 | Componente | Pin Arduino UNO | Descripción |
 | :--- | :--- | :--- |
@@ -42,14 +62,14 @@ Este repositorio contiene la solución completa de firmware (C++ / PlatformIO) y
 
 ---
 
-## 3. Protocolo de Comunicación Serial
+## 4. Protocolo de Comunicación Serial
 
-La comunicación opera a **9600 baudios** por defecto mediante el puerto USB nativo de Arduino (`Serial`).
+La comunicación opera a **9600 baudios** por defecto mediante la Web Serial API (`Serial`).
 
-### A. Telemetría Enviada por Arduino (Frecuencia: ~100 ms)
-El Arduino transmite continuamente líneas de JSON con el estado en tiempo real:
+### A. Telemetría Enviada por Arduino (JSON continuo cada 100 ms)
 ```json
 {
+  "mode": "AUTO",
   "status": "seguimiento",
   "left": 0,
   "center": 1,
@@ -57,64 +77,82 @@ El Arduino transmite continuamente líneas de JSON con el estado en tiempo real:
   "dir": "adelante",
   "mLeft": 180,
   "mRight": 180,
-  "buzzer": false
+  "speed": 180,
+  "buzzer": false,
+  "routeStep": 1,
+  "routeTotal": 3,
+  "lastRef": "Intersección 1"
 }
 ```
 
-* `status`: `detenido`, `seguimiento`, `buscando`, `monitoreo`.
-* `left`, `center`, `right`: `1` (Línea negra detectada - LOW) o `0` (Fondo claro - HIGH).
-* `dir`: `adelante`, `izquierda`, `derecha`, `detenido`.
-* `mLeft`, `mRight`: Velocidad solicitada PWM (0 a 255).
-* `buzzer`: `true` o `false`.
+### B. Comandos Seriales Soportados por el Firmware
 
-### B. Comandos Enviados desde el Frontend al Arduino
-Los comandos se envían con salto de línea (`\n`):
+* **Comandos Globales:**
+  - `STOP` / `EMERGENCY_STOP`: Detiene motores inmediatamente en cualquier modo.
+  - `MODE:AUTO`: Cambia a modo autónomo seguidor de línea.
+  - `MODE:MANUAL`: Cambia a modo de control manual direccional.
+  - `MODE:RUTAS`: Cambia a modo de ejecución de rutas.
+  - `SPEED:<valor>`: Establece la velocidad PWM (rango 100 a 255).
+  - `BUZZER_ON` / `BUZZER_OFF`: Controla la alerta sonora (D11).
+  - `MONITOR`: Mantiene motores detenidos y transmite solo lectura de sensores.
 
-* `START`: Inicia el algoritmo autónomo de seguimiento de línea.
-* `STOP`: Detiene inmediatamente los motores y pasa a estado `detenido`.
-* `MONITOR`: Detiene los motores y transmite únicamente la lectura de sensores.
-* `BUZZER_ON`: Activa la alerta sonora en el pin D11.
-* `BUZZER_OFF`: Desactiva la alerta sonora.
+* **Comandos de Modo MANUAL:**
+  - `MANUAL:FW`: Avanza hacia adelante.
+  - `MANUAL:BW`: Retrocede.
+  - `MANUAL:LEFT`: Giro suave a la izquierda.
+  - `MANUAL:RIGHT`: Giro suave a la derecha.
+  - `MANUAL:SPIN_LEFT`: Rotación sobre su eje a la izquierda.
+  - `MANUAL:SPIN_RIGHT`: Rotación sobre su eje a la derecha.
+  - `MANUAL:STOP`: Detiene movimiento manual.
+
+* **Comandos de Modo RUTAS:**
+  - `ROUTE:CLEAR`: Limpia el búfer de pasos en el firmware.
+  - `ROUTE:ADD:<PASO>`: Añade instrucción (`FW_REF`, `TURN_LEFT`, `TURN_RIGHT`, `STOP`).
+  - `ROUTE:START`: Inicia la ejecución secuencial de la ruta cargada.
+  - `ROUTE:PAUSE` / `ROUTE:STOP`: Detiene la ejecución de la ruta.
 
 ---
 
-## 4. Instrucciones de Instalación y Ejecución
+## 5. Instrucciones de Compilación y Ejecución
 
-### A. Cargar el Firmware al Arduino UNO
-1. Instala **VS Code** con la extensión **PlatformIO IDE**.
-2. Conecta el Arduino UNO mediante cable USB a la computadora.
-3. Abre la carpeta del proyecto en VS Code.
-4. Compila y sube el firmware seleccionando `Upload` en PlatformIO.
+### A. Cargar Firmware C++ al Arduino UNO
+```bash
+# Compilar firmware con PlatformIO
+pio run
+
+# Ssubir al Arduino UNO conectado
+pio run --target upload
+```
 
 ### B. Ejecutar el Frontend Web
-1. Abre una terminal en la carpeta `frontend/`:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-2. Abre la aplicación en Google Chrome, MS Edge u Opera navegando a `http://localhost:5173`.
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Abre en tu navegador (Chrome, Edge u Opera): `http://localhost:5173`
 
 ---
 
-## 5. Guía de Uso del Frontend (RoboTrack)
+## 6. Guía de Pruebas Físicas y Demostración
 
-1. **Conexión Real mediante Web Serial API (USB):**
-   * Selecciona el Baud Rate (**9600** por defecto).
-   * Haz clic en **Conectar USB**.
-   * Selecciona el puerto serie correspondiente a tu Arduino UNO en el diálogo del navegador.
-   * Una vez conectado, la interfaz mostrará la telemetría enviada en tiempo real.
+1. **Pruebas en Modo AUTO (Seguidor de línea):**
+   - Ubica el carrito sobre una pista con cinta aislante negra.
+   - Selecciona **AUTO — Seguidor** en la barra superior.
+   - Haz clic en **Iniciar Seguimiento**. Verifica que siga la línea y que al levantar el robot pase al estado `buscando`.
 
-2. **Modo Demostración (Simulado):**
-   * Si no tienes el hardware físico conectado o usas un navegador no compatible con Web Serial, haz clic en **Activar Demo**.
-   * Podrás probar la respuesta gráfica de sensores, velocímetros y el historial de eventos sin enviar comandos al puerto físico.
+2. **Pruebas en Modo MANUAL (Control direccional):**
+   - Selecciona **MANUAL — Control**.
+   - Ajusta el deslizador de velocidad PWM (ej. 180 PWM).
+   - Utiliza las teclas **WASD / Flechas** o la cruceta en pantalla.
+   - Suelta las teclas y verifica que el robot se detenga. Desconecta o interrumpe la señal para comprobar que el **timeout de 500ms** detiene los motores en el firmware.
 
-3. **Parada de Emergencia:**
-   * El botón rojo **PARADA DE EMERGENCIA** tiene máxima prioridad visual y envía de inmediato la instrucción `STOP` para desenergizar los motores en caso de desviación.
+3. **Pruebas en Modo RUTAS (Recorridos en mapa):**
+   - Selecciona **RUTAS — Recorridos**.
+   - Selecciona una plantilla (ej. *Ruta 1: Directo a Destino A*) o construye tu secuencia.
+   - Presiona **Iniciar Ruta Programada**.
+   - Observa cómo el robot avanza hasta la intersección (`1 1 1`), ejecuta el giro programado y actualiza el mapa esquemático y el porcentaje de progreso hasta completar el recorrido.
 
----
-
-## 6. Pruebas y Verificación
-
-* **Pruebas Sin Hardware (Simulación):** Se activan mediante el botón **Activar Demo**. Permiten validar la renderización responsive, la posición gráfica de la línea, la animación de velocidad de motores y la bitácora de eventos.
-* **Pruebas Con Hardware Físico:** Conectar el Arduino UNO por USB, encender la batería del L298N y pulsar **Conectar USB**. Probar **Iniciar Seguimiento** sobre una pista de cinta aislante negra y presionar **PARADA DE EMERGENCIA** para verificar la detención inmediata.
+4. **Pruebas en Modo Demostración Simulado:**
+   - Si no dispones del hardware físico conectado, haz clic en **Activar Demo**.
+   - Podrás probar la respuesta gráfica de la interfaz en los 3 modos de forma completamente simulada e aislada del puerto físico.
